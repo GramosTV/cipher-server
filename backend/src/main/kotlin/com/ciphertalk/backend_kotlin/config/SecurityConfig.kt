@@ -29,12 +29,12 @@ import org.springframework.web.filter.OncePerRequestFilter
 class SecurityConfig(
     private val userDetailsService: UserDetailsServiceImpl,
     private val jwtAuthFilter: JwtAuthFilter
-) {
-
-    @Bean
+) {    @Bean
     fun passwordEncoder(): PasswordEncoder {
         return BCryptPasswordEncoder()
-    }    @Bean
+    }
+
+    @Bean
     fun authenticationManager(authenticationConfiguration: AuthenticationConfiguration): AuthenticationManager {
         return authenticationConfiguration.authenticationManager
     }
@@ -46,8 +46,7 @@ class SecurityConfig(
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "OPTIONS")
         configuration.allowedHeaders = listOf("*")
         configuration.allowCredentials = true
-        
-        val source = UrlBasedCorsConfigurationSource()
+          val source = UrlBasedCorsConfigurationSource()
         source.registerCorsConfiguration("/**", configuration)
         return source
     }
@@ -60,6 +59,8 @@ class SecurityConfig(
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers("/api/auth/**").permitAll() // Allow access to auth endpoints
+                    .requestMatchers("/api/users/*/public-key").permitAll() // Allow access to public key endpoints
+                    .requestMatchers("/api/users/public-keys").permitAll() // Allow access to all public keys
                     .requestMatchers("/ws/**").permitAll() // Allow access to WebSocket handshake endpoint
                     .anyRequest().authenticated() // All other requests require authentication
             }

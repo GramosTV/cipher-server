@@ -1,6 +1,8 @@
 package com.ciphertalk.backend_kotlin.handler
 
+import com.ciphertalk.backend_kotlin.dto.*
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.socket.CloseStatus
@@ -29,29 +31,77 @@ class ChatWebSocketHandler(private val objectMapper: ObjectMapper) : TextWebSock
         logger.info("WebSocket connection established: Session ID = ${session.id}, User = $username")
         // Optionally, send a welcome message or connection confirmation
         // session.sendMessage(TextMessage(objectMapper.writeValueAsString(ChatMessage(content = "Welcome $username!", type = "SYSTEM"))))
-    }
-
-    override fun handleTextMessage(session: WebSocketSession, message: TextMessage) {
+    }    override fun handleTextMessage(session: WebSocketSession, message: TextMessage) {
         val username = session.principal?.name ?: "anonymous"
         logger.info("Received message from User = $username, Session ID = ${session.id}: ${message.payload}")
 
         try {
-            val incomingMessage = objectMapper.readValue(message.payload, ChatMessage::class.java)
-            val enrichedMessage = incomingMessage.copy(sender = username) // Enrich message with sender from session
-
-            // For now, echo the message back to the sender
-            // In a real app, you would route this to the intended recipient(s)
-            // or broadcast to a group/room.
-            session.sendMessage(TextMessage(objectMapper.writeValueAsString(ChatMessage(content = "Echo: ${enrichedMessage.content}", sender = "SERVER", type = "ECHO"))))
-
-            // Example: Broadcast to all other connected sessions (simple broadcast)
-            // sessions.values.filter { it.isOpen && it.id != session.id }.forEach {
-            //     it.sendMessage(TextMessage(objectMapper.writeValueAsString(enrichedMessage)))
-            // }
+            // Try to parse as different message types
+            val messagePayload = message.payload
+            
+            // Determine message type by parsing JSON
+            val messageType = try {
+                val tempMap = objectMapper.readValue<Map<String, Any>>(messagePayload)
+                tempMap["type"] as? String ?: "TEXT"
+            } catch (e: Exception) {
+                "TEXT"
+            }
+            
+            when (messageType) {
+                "SECURE" -> handleSecureMessage(session, messagePayload, username)
+                "KEY_EXCHANGE" -> handleKeyExchange(session, messagePayload, username)
+                else -> handleRegularMessage(session, messagePayload, username)
+            }
 
         } catch (e: Exception) {
             logger.error("Error processing message from Session ID = ${session.id}: ${e.message}", e)
             session.sendMessage(TextMessage(objectMapper.writeValueAsString(ChatMessage(content = "Error processing your message: ${e.localizedMessage}", sender = "SERVER", type = "ERROR"))))
+        }
+    }
+    
+    private fun handleRegularMessage(session: WebSocketSession, messagePayload: String, username: String) {
+        val incomingMessage = objectMapper.readValue<ChatMessage>(messagePayload)
+        val enrichedMessage = incomingMessage.copy(sender = username)
+
+        // Broadcast to all other connected sessions
+        sessions.values.filter { it.isOpen && it.id != session.id }.forEach { targetSession ->
+            try {
+                targetSession.sendMessage(TextMessage(objectMapper.writeValueAsString(enrichedMessage)))
+            } catch (e: Exception) {
+                logger.error("Failed to send message to session ${targetSession.id}: ${e.message}")
+            }
+        }
+    }
+    
+    private fun handleSecureMessage(session: WebSocketSession, messagePayload: String, username: String) {
+        val secureMessage = objectMapper.readValue<SecureMessageDto>(messagePayload)
+        val enrichedMessage = secureMessage.copy(sender = username)
+        
+        logger.info("Handling secure message from $username")
+        
+        // Forward encrypted message to all other sessions (they will decrypt with their private keys)
+        sessions.values.filter { it.isOpen && it.id != session.id }.forEach { targetSession ->
+            try {
+                targetSession.sendMessage(TextMessage(objectMapper.writeValueAsString(enrichedMessage)))
+            } catch (e: Exception) {
+                logger.error("Failed to send secure message to session ${targetSession.id}: ${e.message}")
+            }
+        }
+    }
+    
+    private fun handleKeyExchange(session: WebSocketSession, messagePayload: String, username: String) {
+        val keyExchangeMessage = objectMapper.readValue<KeyExchangeMessageDto>(messagePayload)
+        val enrichedMessage = keyExchangeMessage.copy(sender = username)
+        
+        logger.info("Handling key exchange from $username")
+        
+        // Forward key exchange to all other sessions
+        sessions.values.filter { it.isOpen && it.id != session.id }.forEach { targetSession ->
+            try {
+                targetSession.sendMessage(TextMessage(objectMapper.writeValueAsString(enrichedMessage)))
+            } catch (e: Exception) {
+                logger.error("Failed to send key exchange to session ${targetSession.id}: ${e.message}")
+            }
         }
     }
 
