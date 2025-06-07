@@ -46,10 +46,11 @@ class ChatWebSocketHandler(private val objectMapper: ObjectMapper) : TextWebSock
             } catch (e: Exception) {
                 "TEXT"
             }
-            
-            when (messageType) {
+              when (messageType) {
                 "SECURE" -> handleSecureMessage(session, messagePayload, username)
                 "KEY_EXCHANGE" -> handleKeyExchange(session, messagePayload, username)
+                "CALL_SIGNAL" -> handleCallSignaling(session, messagePayload, username)
+                "CALL_OFFER", "CALL_ANSWER", "ICE_CANDIDATE" -> handleCallSignaling(session, messagePayload, username)
                 else -> handleRegularMessage(session, messagePayload, username)
             }
 
@@ -88,8 +89,7 @@ class ChatWebSocketHandler(private val objectMapper: ObjectMapper) : TextWebSock
             }
         }
     }
-    
-    private fun handleKeyExchange(session: WebSocketSession, messagePayload: String, username: String) {
+      private fun handleKeyExchange(session: WebSocketSession, messagePayload: String, username: String) {
         val keyExchangeMessage = objectMapper.readValue<KeyExchangeMessageDto>(messagePayload)
         val enrichedMessage = keyExchangeMessage.copy(sender = username)
         
@@ -102,6 +102,27 @@ class ChatWebSocketHandler(private val objectMapper: ObjectMapper) : TextWebSock
             } catch (e: Exception) {
                 logger.error("Failed to send key exchange to session ${targetSession.id}: ${e.message}")
             }
+        }
+    }
+    
+    private fun handleCallSignaling(session: WebSocketSession, messagePayload: String, username: String) {
+        try {
+            val signalingMessage = objectMapper.readValue<CallSignalingDto>(messagePayload)
+            val enrichedMessage = signalingMessage.copy()
+            
+            logger.info("Handling call signaling from $username for call ${signalingMessage.callId}")
+            
+            // Forward call signaling to specific recipient or all sessions for now
+            // In a production system, you'd want to send only to the specific recipient
+            sessions.values.filter { it.isOpen && it.id != session.id }.forEach { targetSession ->
+                try {
+                    targetSession.sendMessage(TextMessage(objectMapper.writeValueAsString(enrichedMessage)))
+                } catch (e: Exception) {
+                    logger.error("Failed to send call signaling to session ${targetSession.id}: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Error handling call signaling: ${e.message}")
         }
     }
 

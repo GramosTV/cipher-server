@@ -52,8 +52,7 @@ class SecurityConfig(
     }
 
     @Bean
-    fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
-        http
+    fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {        http
             .cors { it.configurationSource(corsConfigurationSource()) } // Enable CORS
             .csrf { it.disable() } // Disable CSRF for stateless APIs
             .authorizeHttpRequests { auth ->
@@ -62,6 +61,8 @@ class SecurityConfig(
                     .requestMatchers("/api/users/*/public-key").permitAll() // Allow access to public key endpoints
                     .requestMatchers("/api/users/public-keys").permitAll() // Allow access to all public keys
                     .requestMatchers("/ws/**").permitAll() // Allow access to WebSocket handshake endpoint
+                    .requestMatchers("/api/contacts/**").authenticated() // Require authentication for contacts
+                    .requestMatchers("/api/calls/**").authenticated() // Require authentication for calls
                     .anyRequest().authenticated() // All other requests require authentication
             }
             .sessionManagement { session ->
